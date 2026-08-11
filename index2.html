@@ -92,12 +92,18 @@
         </div>
     </div>
 
+    <!-- 加载 Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
     <script>
         // ========== 你的 Supabase 配置 ==========
         const SUPABASE_URL = 'https://esplsrsgpghsrlbhrona.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzcGxzcnNncGdoc3JsYmhyb25hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0MDU3MzcsImV4cCI6MjEwMTk4MTczN30.VZlqfbFiqi6N-7yPTgZmiED4o49OPos0fyiozK34lzE';
         const TABLE_NAME = 'test_data';
         // ========================================
+
+        // 创建 Supabase 客户端
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         function log(message, isError = false) {
             const resultDiv = document.getElementById('result');
@@ -122,32 +128,28 @@
             try {
                 log('🔄 开始测试连接...');
                 
-                const response = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?limit=1`, {
-                    method: 'GET',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                // 使用 Supabase SDK 查询
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .select('*')
+                    .limit(1);
+                
+                if (error) {
+                    if (error.code === '42P01') {
+                        log('⚠️ 表不存在，请先在Supabase中创建表', true);
+                        log('📌 表名: test_data，字段: id, name, content, created_at', true);
+                    } else {
+                        throw error;
                     }
-                });
-
-                if (response.status === 404) {
-                    log('⚠️ 表不存在，请先在Supabase中创建表', true);
-                    log('📌 建议创建表名: test_data，包含字段: id, name, content, created_at', true);
                     return;
                 }
-
-                if (response.ok) {
-                    log('✅ 连接成功！API工作正常');
-                    const data = await response.json();
-                    log(`📊 当前有 ${data.length} 条记录`);
-                } else {
-                    log(`❌ 连接失败: ${response.status} ${response.statusText}`, true);
-                    const errorText = await response.text();
-                    if (errorText) log(`错误详情: ${errorText}`, true);
-                }
+                
+                log('✅ 连接成功！API工作正常');
+                log(`📊 当前有 ${data.length} 条记录`);
+                
             } catch (error) {
                 log(`❌ 错误: ${error.message}`, true);
-                log('💡 提示: 检查网络连接或 Supabase 配置', true);
+                log('💡 提示: 检查 Supabase 配置和 RLS 设置', true);
             }
         }
 
@@ -158,32 +160,23 @@
                 
                 log(`🔄 正在添加数据: ${name} - ${content}`);
                 
-                const response = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json',
-                        'Prefer': 'return=representation'
-                    },
-                    body: JSON.stringify({
-                        name: name,
-                        content: content,
-                        created_at: new Date().toISOString()
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    log(`✅ 数据添加成功！ID: ${data[0]?.id || '未知'}`);
-                    setTimeout(getRecords, 500);
-                } else {
-                    log(`❌ 添加失败: ${response.status} ${response.statusText}`, true);
-                    const errorText = await response.text();
-                    if (errorText) log(`错误详情: ${errorText}`, true);
-                }
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .insert([
+                        { name: name, content: content }
+                    ])
+                    .select();
+                
+                if (error) throw error;
+                
+                log(`✅ 数据添加成功！ID: ${data[0]?.id || '未知'}`);
+                setTimeout(getRecords, 500);
+                
             } catch (error) {
-                log(`❌ 错误: ${error.message}`, true);
+                log(`❌ 添加失败: ${error.message}`, true);
+                if (error.code === '42P01') {
+                    log('💡 表不存在，请在 Supabase 中创建 test_data 表', true);
+                }
             }
         }
 
@@ -191,29 +184,24 @@
             try {
                 log('🔄 正在获取所有数据...');
                 
-                const response = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?order=created_at.desc`, {
-                    method: 'GET',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    log(`✅ 成功获取 ${data.length} 条记录`);
-                    if (data.length > 0) {
-                        data.forEach((item, index) => {
-                            log(`📝 ${index+1}. ${item.name}: ${item.content} (${item.created_at})`);
-                        });
-                    } else {
-                        log('📭 暂无数据，请先添加');
-                    }
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (error) throw error;
+                
+                log(`✅ 成功获取 ${data.length} 条记录`);
+                if (data.length > 0) {
+                    data.forEach((item, index) => {
+                        log(`📝 ${index+1}. ${item.name}: ${item.content} (${item.created_at})`);
+                    });
                 } else {
-                    log(`❌ 读取失败: ${response.status} ${response.statusText}`, true);
+                    log('📭 暂无数据，请先添加');
                 }
+                
             } catch (error) {
-                log(`❌ 错误: ${error.message}`, true);
+                log(`❌ 读取失败: ${error.message}`, true);
             }
         }
 
@@ -223,6 +211,7 @@
             document.getElementById('status').innerHTML = '';
         }
 
+        // 页面加载时自动测试
         window.onload = function() {
             log('🚀 页面已加载，准备测试...');
             log('💡 点击"测试连接"按钮开始');
